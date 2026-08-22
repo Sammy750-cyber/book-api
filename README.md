@@ -71,3 +71,131 @@ Again it worked
 ## Important
 
 One important thing i did was not to edit the main branch directly, created a seperate branch to implement fixes so i wouldn't interfere with the main working code. Now that it works i can merge.
+
+## So Far 
+
+The whole phase above demonstrated the architecture i have below, which is still basic. I am still and this is where i am so far
+
+```text
+                     GitHub
+                        │
+                 Push / Pull Request
+                        │
+                        ↓
+                  ┌───────────┐
+                  │    CI     │
+                  └─────┬─────┘
+                        │
+                 Checkout Code
+                        │
+                        ↓
+                  Setup Node.js
+                        │
+                        ↓
+                     npm ci
+                        │
+              ┌─────────┴─────────┐
+              ↓                   ↓
+            Lint                Tests
+              │                   │
+              └─────────┬─────────┘
+                        ↓
+                      Build
+                        │
+                        ↓
+                    CI Result
+```
+
+## Security Gates
+
+Before now it had always been:
+
+```text
+Code
+ ↓
+Lint
+ ↓
+Tests
+ ↓
+Build
+```
+
+What this phase is meant to introduce:
+
+```text
+Code
+ ↓
+Lint
+ ↓
+Tests
+ ↓
+SAST
+ ↓
+SCA
+ ↓
+Secret Scanning
+ ↓
+Security Gate
+ ↓
+Build
+```
+
+The goal is to ensure the code passes the security gate before building.
+
+**Security Gate:** A security gate is a condition that must be satisfied before the pipeline can continue.
+
+The pipeline simply becomes:
+
+```text
+                Pull Request
+                     │
+                     ↓
+                    CI
+                     │
+       ┌─────────────┼─────────────┐
+       ↓             ↓             ↓
+     Lint           Tests         SAST
+       │             │             │
+       └─────────────┴─────────────┘
+                     │
+                     ↓
+                    SCA
+                     │
+                     ↓
+              Secret Scanning
+                     │
+                     ↓
+              Security Gate
+                │         │
+              PASS       FAIL
+                │         │
+                ↓         ↓
+              Build     Block PR
+```
+
+The project itself didn't change, i just added additional layer of security analysis, I introduced codeql and improved the initial workflow.
+
+I started off by editing the `ci.yml`, seperated job `[test, security]` and made sure build strictly depended on `[test, security]`.
+
+### What is now included
+
+- Separate jobs – test, security, and build run independently.
+
+- Dependency – build has needs: [test, security], so it will only start after both jobs pass.
+
+- Security job runs:
+
+    - npm audit – checks for known vulnerabilities in dependencies.
+
+    - gitleaks/gitleaks-action – scans the repository for hardcoded secrets.
+
+Added CodeQL, It is a security-analysis system whose findings can become PR security signals.
+
+### What it does:
+- Runs CodeQL analysis on every push and pull request to main.
+
+- Also runs a weekly scheduled scan for continuous security monitoring.
+
+- Uses the official GitHub CodeQL actions (init, autobuild, analyze).
+
+- Supports JavaScript/TypeScript (the language used in this project).
