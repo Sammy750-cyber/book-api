@@ -4,7 +4,7 @@ import app from '../src/app';
 describe('Book API Endpoints', () => {
   it('GET /books should return all books', async () => {
     const response = await request(app).get('/books');
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(201);
     expect(response.body).toHaveLength(2);
   });
 

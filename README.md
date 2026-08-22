@@ -199,3 +199,15 @@ Added CodeQL, It is a security-analysis system whose findings can become PR secu
 - Uses the official GitHub CodeQL actions (init, autobuild, analyze).
 
 - Supports JavaScript/TypeScript (the language used in this project).
+
+I commited the changes to the main branch amd here's the result.
+
+![alt text](screenshots/code_ql.png)
+
+## Time to test
+
+To make the sure the code actually works and detects error in real-time, I intentionally introduced flaws
+
+### Test 1 - Break the Tests
+
+I introduced an incorrect expectation.
