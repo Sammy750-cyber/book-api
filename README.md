@@ -31,7 +31,7 @@ I chose to build this application because it is actually a simple RESTful API pr
 
 # Installation
 ```bash
-git clone 
+git clone https://github.com/Sammy750-cyber/book-api.git
 cd book-api
 npm run dev # to run
 npm build # To builf basically
