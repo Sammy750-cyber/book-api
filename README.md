@@ -62,4 +62,12 @@ It worked:
 
 ![alt text](screenshots/fixed_pr.png)
 
-However this is local test, i still have to push it to make sure it really works
+However this is local test, i still have to push it to make sure it really works.
+
+Again it worked
+
+![alt text](screenshots/test_1_fixed.png)
+
+## Important
+
+One important thing i did was not to edit the main branch directly, created a seperate branch to implement fixes so i wouldn't interfere with the main working code. Now that it works i can merge.
