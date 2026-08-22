@@ -46,3 +46,11 @@ export const deleteBook = (id: number): boolean => {
   books = books.filter((book) => book.id !== id);
   return books.length !== initialLength;
 };
+
+export const resetBooks = (): void => {
+  books = [
+    { id: 1, title: 'The Great Gatsby', author: 'F. Scott Fitzgerald', year: 1925 },
+    { id: 2, title: 'To Kill a Mockingbird', author: 'Harper Lee', year: 1960 },
+  ];
+  nextId = 3;
+};

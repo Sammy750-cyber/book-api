@@ -3,12 +3,7 @@ import { Book } from '../src/types/book';
 
 describe('Book Service', () => {
   beforeEach(() => {
-    // Reset in-memory data before each test
-    // Note: This is a simple approach; for a real app you'd use a database or a proper reset.
-    // We'll manipulate the service directly in the tests.
-    // To ensure clean state, we can clear and re-add default books.
-    // For simplicity, we'll not fully reset here, but be aware of side effects.
-    // In a real project, use a test database or mock.
+    bookService.resetBooks();  // Reset to initial state
   });
 
   it('should get all books', () => {
