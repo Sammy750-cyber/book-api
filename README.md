@@ -210,4 +210,11 @@ To make the sure the code actually works and detects error in real-time, I inten
 
 ### Test 1 - Break the Tests
 
-I introduced an incorrect expectation.
+I introduced an incorrect expectation. The test failed gracefully even though it passed the security test, the `build` test to commence because it needed to pass the two prior tests.
+
+![alt text](screenshots/test_2_failed.png)
+
+
+### Test 2 - Introduce lint error
+
+CUrrently the ESLint configuration enforces single quotes and semicolons. Choose a simple violation, so test if that actually works, i violated it.
