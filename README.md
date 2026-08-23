@@ -217,4 +217,6 @@ I introduced an incorrect expectation. The test failed gracefully even though it
 
 ### Test 2 - Introduce lint error
 
-CUrrently the ESLint configuration enforces single quotes and semicolons. Choose a simple violation, so test if that actually works, i violated it.
+CUrrently the ESLint configuration enforces single quotes and semicolons. I chose a simple violation test if that actually works, i violated it.
+
+![alt text](screenshots/lint_test_failure.png)
