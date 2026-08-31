@@ -25,6 +25,14 @@ export const createBook = (data: Omit<Book, 'id'>): Book => {
   return newBook;
 };
 
+export const searchBook = (query: string): Book[] => {
+  const lowerQuery = query.toLowerCase();
+  return books.filter((book) =>
+    book.title.toLowerCase().includes(lowerQuery) ||
+    book.author.toLowerCase().includes(lowerQuery)
+  );
+};
+
 export const updateBook = (
   id: number,
   data: Partial<Omit<Book, 'id'>>

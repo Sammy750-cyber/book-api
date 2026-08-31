@@ -24,6 +24,15 @@ export const createBook = (req: Request, res: Response) => {
   return res.status(201).json(newBook);
 };
 
+export const searchBook = (req: Request, res: Response) => {
+  const query = req.query.q as string;
+  if (!query) {
+    return res.status(400).json({ message: 'Missing search query' });
+  }
+  const results = bookService.searchBook(query);
+  return res.json(results);
+};
+
 export const updateBook = (req: Request, res: Response) => {
   const id = parseInt(req.params.id, 10);
   const { title, author, year } = req.body;

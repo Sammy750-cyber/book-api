@@ -5,6 +5,7 @@ const router = Router();
 
 router.get('/', bookController.getAllBooks);
 router.get('/:id', bookController.getBookById);
+router.get('/search', bookController.searchBook);
 router.post('/', bookController.createBook);
 router.put('/:id', bookController.updateBook);
 router.delete('/:id', bookController.deleteBook);
