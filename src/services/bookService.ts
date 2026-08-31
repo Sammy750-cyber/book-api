@@ -43,7 +43,7 @@ export const updateBook = async (
   data: Partial<Omit<Book, 'id'>>
 ): Promise<Book | undefined> => {
   const fields = [];
-  const values: any[] = [];
+  const values = [];
   let index = 1;
 
   if (data.title) {
