@@ -1,6 +1,34 @@
 # BOOK API
+# Secure Book API
 
-I am currently building a career in DevSecOps which is a field in cyber security, in which part i am learning `Git & CI/CD`. The whole purpose of this project is to prove that i can actually implement what i learn instead of just understanding concepts.
+A production-oriented Node.js and TypeScript REST API built to demonstrate professional Git workflows, CI/CD automation, containerization, and DevSecOps practices.
+
+## Objectives
+
+- Establish a professional Git workflow
+- Build a tested REST API
+- Implement continuous integration
+- Implement continuous delivery
+- Containerize the application
+- Integrate security scanning
+- Deploy to staging and production
+- Demonstrate release and rollback strategies
+
+## Technology
+
+- Node.js
+- TypeScript
+- Express
+- PostgreSQL
+- Docker
+- GitHub Actions
+
+## Repository Workflow
+
+The project uses feature branches and pull requests rather than direct development on `main`.
+
+More documentation will be added as the project progresses.
+
 
 ## The project goal:
 ```text
