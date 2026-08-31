@@ -27,7 +27,7 @@ describe('Book Service', () => {
     const newBook = await bookService.createBook(newBookData);
     expect(newBook.id).toBeDefined();
     expect(newBook.title).toBe('1984');
-    const allBooks = bookService.getAllBooks();
+    const allBooks = await bookService.getAllBooks();
     expect(allBooks).toHaveLength(3);
   });
 

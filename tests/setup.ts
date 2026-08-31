@@ -1,5 +1,8 @@
 import { initializeDatabase } from '../src/db/init';
 import pool from '../src/db';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 beforeAll(async () => {
   // Set test database environment variables if not already set
