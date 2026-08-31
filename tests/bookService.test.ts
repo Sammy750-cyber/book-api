@@ -1,5 +1,5 @@
 import * as bookService from '../src/services/bookService';
-import * as resetDb from './helpers/resetDB';
+import * as resetDb from './helpers/resetDb';
 
 describe('Book Service', () => {
   beforeEach(async () => {
