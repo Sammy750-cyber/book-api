@@ -1,5 +1,4 @@
 import * as bookService from '../src/services/bookService';
-import { Book } from '../src/types/book';
 import { resetDb } from './helpers/resetDB';
 
 describe('Book Service', () => {

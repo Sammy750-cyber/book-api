@@ -7,7 +7,7 @@ import { Book } from '../types/book';
 //   { id: 2, title: 'To Kill a Mockingbird', author: 'Harper Lee', year: 1960 },
 // ];
 
-let nextId = 3;
+// let nextId = 3;
 
 export const getAllBooks = async (): Promise<Book[]> => {
    const result = await pool.query('SELECT * FROM books ORDER BY id');

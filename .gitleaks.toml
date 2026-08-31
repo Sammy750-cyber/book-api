@@ -1,0 +1,41 @@
+# Gitleaks configuration for book-api
+# Documentation: https://github.com/gitleaks/gitleaks#configuration
+
+title = "Book API Gitleaks Configuration"
+
+# Report mode: "json" or "sarif" are recommended for CI integration
+[extend]
+# Use default rules as a baseline
+useDefault = true
+
+# Custom rules (add or override)
+[[rules]]
+id = "postgres-connection-string"
+description = "Detects PostgreSQL connection strings"
+regex = '''postgres(?:ql)?://[a-zA-Z0-9_]+:[^@\s]+@[a-zA-Z0-9.-]+(?::\d+)?/[a-zA-Z0-9_]+'''
+tags = ["database", "postgres"]
+keywords = ["postgres", "postgresql"]
+severity = "high"
+
+[[rules]]
+id = "npm-token"
+description = "Detects npm access tokens"
+regex = '''//registry\.npmjs\.org/:_authToken=[a-zA-Z0-9-]+'''
+tags = ["npm", "token"]
+severity = "high"
+
+# Allowlist: paths or files to ignore (e.g., test fixtures, documentation)
+[allowlist]
+description = "Files and paths to exclude from scanning"
+paths = [
+  '''tests/fixtures/.*''',           # Exclude test fixtures
+  '''README\.md''',                  # Exclude documentation if it contains dummy secrets
+  '''\.github/.*''',                 # Exclude workflow files (they may contain env placeholders)
+]
+regexes = [
+  '''password\s*=\s*['"]postgres['"]''',  # Ignore default Postgres password in examples
+]
+
+# Optional: configure rules for entropy (reduce false positives)
+# [rules.allowlist]
+# entropy = "3.5"
