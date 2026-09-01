@@ -38,8 +38,14 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Typecheck
+        run: npm run typecheck
+
       - name: Test
         run: npm test
+
+      - name: Test with coverage
+        run: npm run test:coverage
         env:
           DB_HOST: localhost
           DB_PORT: 5432
