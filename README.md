@@ -340,3 +340,130 @@ docker build -t book-api:local .
 ```
 
 After building, i ran the image, i was face with some problems which involved connecting to database. I to resolve that i had to create a container with postgres included allowed communication between the `book-api` and the `postgres` database using `docker-compose.yml`
+
+```bash
+docker compose up --build
+```
+
+## Container Security
+
+Now that the Book API is containerized, the next step is to make container security part of the delivery pipeline.
+
+Target Pipeline becomes:
+```text
+Pull Request
+     │
+     ▼
+┌───────────────┐
+│ Application CI│
+│               │
+│ Lint          │
+│ Typecheck     │
+│ Tests         │
+│ Build         │
+└───────┬───────┘
+        │
+        ▼
+┌────────────────┐
+│ Security       │
+│                │
+│ npm audit      │
+│ Gitleaks       │
+│ CodeQL         │
+└───────┬────────┘
+        │
+        ▼
+┌────────────────┐
+│ Docker Build   │
+└───────┬────────┘
+        │
+        ▼
+┌────────────────┐
+│ Trivy Scan     │
+│                │
+│ OS packages    │
+│ Node packages  │
+│ Vulnerabilities│
+└───────┬────────┘
+        │
+        ▼
+     Registry
+```
+
+After installinfg `trivy`, I tested to see how it works locally.
+
+```bash
+trivy.exe image \
+  --format json \
+  --output trivy-report.json \
+  book-api:local
+```
+result:
+
+![alt text](screenshots/trivy_scan_result.png)
+
+For filtered outputs, i used:
+
+```bash
+trivy.exe image \
+  --severity HIGH,CRITICAL \
+  --exit-code 1 \
+  book-api:local
+  ```
+
+  ## Adding Trivy to Github Actions
+
+  I created a new workflow `containersecurity.yml`. The workflow basically demonstraits:
+
+  ```text
+  Checkout
+   ↓
+Docker Build
+   ↓
+Trivy
+   ↓
+HIGH/CRITICAL?
+   ├── YES → FAIL
+   └── NO  → PASS
+```
+
+The workflow was configured to on fail only on `critical` and `severe` vulnerabilities while reporting others.
+
+```yml
+name: Container Security
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  container-scan:
+    name: Build and Scan Container
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t book-api:${{ github.sha }} \
+            .
+
+      - name: Scan container image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: book-api:${{ github.sha }}
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: 1
+```
+
+The main reason for the `ignore-unfixed:true` is the the pipeline won't fail over vulnerabilites for which no `fix` is currently available.
