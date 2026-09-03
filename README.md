@@ -105,33 +105,27 @@ One important thing i did was not to edit the main branch directly, created a se
 The whole phase above demonstrated the architecture i have below, which is still basic. I am still and this is where i am so far
 
 ```text
-                     GitHub
-                        │
-                 Push / Pull Request
-                        │
-                        ↓
-                  ┌───────────┐
-                  │    CI     │
-                  └─────┬─────┘
-                        │
-                 Checkout Code
-                        │
-                        ↓
-                  Setup Node.js
-                        │
-                        ↓
-                     npm ci
-                        │
-              ┌─────────┴─────────┐
-              ↓                   ↓
-            Lint                Tests
-              │                   │
-              └─────────┬─────────┘
-                        ↓
-                      Build
-                        │
-                        ↓
-                    CI Result
+             PRb
+              │
+              ▼
+          CI Pipeline
+              │
+      ┌───────┴────────┐
+      ▼                ▼
+   Quality          Security
+      │                │
+ ┌────┼────┐       ┌───┴────┐
+ │    │    │       │        │
+Lint Type Tests   Audit   Gitleaks
+          │
+          ▼
+       Coverage
+          │
+          ▼
+      Threshold
+          │
+          ▼
+        Build
 ```
 
 ## Security Gates
@@ -248,3 +242,101 @@ I introduced an incorrect expectation. The test failed gracefully even though it
 CUrrently the ESLint configuration enforces single quotes and semicolons. I chose a simple violation test if that actually works, i violated it.
 
 ![alt text](screenshots/lint_test_failure.png)
+
+
+# Containerization
+
+## Objectives
+
+1. Production Dockerfile
+2. Docker compose
+3. Docker health checks
+4. Production Docker container
+5. Docker image CI
+6. Docker vulnerability scanning
+7. Docker registry
+8. Image tagging
+
+## Goal
+The goal is to achieve something that looks like this
+
+```text
+                    GitHub
+                       │
+                       ▼
+                  Pull Request
+                       │
+              ┌────────┴────────┐
+              ▼                 ▼
+             CI              Security
+              │                 │
+        ┌─────┼─────┐      ┌────┼─────┐
+        ▼     ▼     ▼      ▼         ▼
+      Lint  Type  Tests   Audit    Gitleaks
+              │
+              └──────┬──────────────┘
+                     ▼
+                Application
+                   Build
+                     │
+                     ▼
+                Docker Build
+                     │
+                     ▼
+             Container Security
+                     │
+                     ▼
+                Docker Image
+                     │
+                     ▼
+              Container Registry
+```
+
+## Target docker architecture
+
+```text
+                 Docker Network
+                       │
+          ┌────────────┴────────────┐
+          │                         │
+          ▼                         ▼
+   ┌──────────────┐          ┌──────────────┐
+   │   Book API   │─────────▶│  PostgreSQL  │
+   │   Node.js    │          │   Database   │
+   │              │          │              │
+   │ Port 3000    │          │ Port 5432    │
+   └──────────────┘          └──────────────┘
+          │
+          │
+          ▼
+      /health
+```
+### WHy 2 stages?
+
+The builder contains everything required to compile the application
+
+```text
+TypeScript
+Jest
+ESLint
+development dependencies
+source code
+```
+and the final image recieves only:
+```text
+Node.js
+production dependencies
+compiled JavaScript
+```
+This reduces the attack surface and keeps build tooling out of the production container.
+
+
+With the docker files created and properly configured.
+
+I built the image
+
+```bash
+docker build -t book-api:local .
+```
+
+After building, i ran the image, i was face with some problems which involved connecting to database. I to resolve that i had to create a container with postgres included allowed communication between the `book-api` and the `postgres` database using `docker-compose.yml`
