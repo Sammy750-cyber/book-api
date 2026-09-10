@@ -691,3 +691,38 @@ Legend:
 - '-': Not scanned
 - '0': Clean (no security findings detected)
 ```
+After commit changes and pushing to a remote repo, the pipeline was triggered and this time all tests were passed.
+
+![alt text](screenshots/all_test_passed.png)
+
+# GHCR Publishing
+
+After successfully I decided to publish to `GHCR`. Github Container Registry is github's own OCI-compliat registry.  GHCR’s main advantage is that publishing and pulling are integrated directly into GitHub’s auth and permissions system, making CI/CD simpler and more secure.
+
+The main idea:
+
+```text
+Build
+  ↓
+Trivy
+  ↓
+PASS?
+  ↓
+YES ──→ Login GHCR
+          ↓
+        Push
+```
+
+If trivy detects any `CRITICAL` or `HIGH` vulnerabilty, the image doesn't get published.
+
+```text
+Build
+  ↓
+Trivy
+  ↓
+FAIL
+  ↓
+STOP
+```
+
+The rules are defined in the `.gihub/workflow/publish-image.yml`.
