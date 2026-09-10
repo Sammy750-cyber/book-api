@@ -105,33 +105,27 @@ One important thing i did was not to edit the main branch directly, created a se
 The whole phase above demonstrated the architecture i have below, which is still basic. I am still and this is where i am so far
 
 ```text
-                     GitHub
-                        │
-                 Push / Pull Request
-                        │
-                        ↓
-                  ┌───────────┐
-                  │    CI     │
-                  └─────┬─────┘
-                        │
-                 Checkout Code
-                        │
-                        ↓
-                  Setup Node.js
-                        │
-                        ↓
-                     npm ci
-                        │
-              ┌─────────┴─────────┐
-              ↓                   ↓
-            Lint                Tests
-              │                   │
-              └─────────┬─────────┘
-                        ↓
-                      Build
-                        │
-                        ↓
-                    CI Result
+             PRb
+              │
+              ▼
+          CI Pipeline
+              │
+      ┌───────┴────────┐
+      ▼                ▼
+   Quality          Security
+      │                │
+ ┌────┼────┐       ┌───┴────┐
+ │    │    │       │        │
+Lint Type Tests   Audit   Gitleaks
+          │
+          ▼
+       Coverage
+          │
+          ▼
+      Threshold
+          │
+          ▼
+        Build
 ```
 
 ## Security Gates
@@ -248,3 +242,452 @@ I introduced an incorrect expectation. The test failed gracefully even though it
 CUrrently the ESLint configuration enforces single quotes and semicolons. I chose a simple violation test if that actually works, i violated it.
 
 ![alt text](screenshots/lint_test_failure.png)
+
+
+# Containerization
+
+## Objectives
+
+1. Production Dockerfile
+2. Docker compose
+3. Docker health checks
+4. Production Docker container
+5. Docker image CI
+6. Docker vulnerability scanning
+7. Docker registry
+8. Image tagging
+
+## Goal
+The goal is to achieve something that looks like this
+
+```text
+                    GitHub
+                       │
+                       ▼
+                  Pull Request
+                       │
+              ┌────────┴────────┐
+              ▼                 ▼
+             CI              Security
+              │                 │
+        ┌─────┼─────┐      ┌────┼─────┐
+        ▼     ▼     ▼      ▼         ▼
+      Lint  Type  Tests   Audit    Gitleaks
+              │
+              └──────┬──────────────┘
+                     ▼
+                Application
+                   Build
+                     │
+                     ▼
+                Docker Build
+                     │
+                     ▼
+             Container Security
+                     │
+                     ▼
+                Docker Image
+                     │
+                     ▼
+              Container Registry
+```
+
+## Target docker architecture
+
+```text
+                 Docker Network
+                       │
+          ┌────────────┴────────────┐
+          │                         │
+          ▼                         ▼
+   ┌──────────────┐          ┌──────────────┐
+   │   Book API   │─────────▶│  PostgreSQL  │
+   │   Node.js    │          │   Database   │
+   │              │          │              │
+   │ Port 3000    │          │ Port 5432    │
+   └──────────────┘          └──────────────┘
+          │
+          │
+          ▼
+      /health
+```
+### WHy 2 stages?
+
+The builder contains everything required to compile the application
+
+```text
+TypeScript
+Jest
+ESLint
+development dependencies
+source code
+```
+and the final image recieves only:
+```text
+Node.js
+production dependencies
+compiled JavaScript
+```
+This reduces the attack surface and keeps build tooling out of the production container.
+
+
+With the docker files created and properly configured.
+
+I built the image
+
+```bash
+docker build -t book-api:local .
+```
+
+After building, i ran the image, i was face with some problems which involved connecting to database. I to resolve that i had to create a container with postgres included allowed communication between the `book-api` and the `postgres` database using `docker-compose.yml`
+
+```bash
+docker compose up --build
+```
+
+## Container Security
+
+Now that the Book API is containerized, the next step is to make container security part of the delivery pipeline.
+
+Target Pipeline becomes:
+```text
+Pull Request
+     │
+     ▼
+┌───────────────┐
+│ Application CI│
+│               │
+│ Lint          │
+│ Typecheck     │
+│ Tests         │
+│ Build         │
+└───────┬───────┘
+        │
+        ▼
+┌────────────────┐
+│ Security       │
+│                │
+│ npm audit      │
+│ Gitleaks       │
+│ CodeQL         │
+└───────┬────────┘
+        │
+        ▼
+┌────────────────┐
+│ Docker Build   │
+└───────┬────────┘
+        │
+        ▼
+┌────────────────┐
+│ Trivy Scan     │
+│                │
+│ OS packages    │
+│ Node packages  │
+│ Vulnerabilities│
+└───────┬────────┘
+        │
+        ▼
+     Registry
+```
+
+After installinfg `trivy`, I tested to see how it works locally.
+
+```bash
+trivy.exe image \
+  --format json \
+  --output trivy-report.json \
+  book-api:local
+```
+result:
+
+![alt text](screenshots/trivy_scan_result.png)
+
+For filtered outputs, i used:
+
+```bash
+trivy.exe image \
+  --severity HIGH,CRITICAL \
+  --exit-code 1 \
+  book-api:local
+  ```
+
+  ## Adding Trivy to Github Actions
+
+  I created a new workflow `containersecurity.yml`. The workflow basically demonstraits:
+
+  ```text
+  Checkout
+   ↓
+Docker Build
+   ↓
+Trivy
+   ↓
+HIGH/CRITICAL?
+   ├── YES → FAIL
+   └── NO  → PASS
+```
+
+The workflow was configured to on fail only on `critical` and `severe` vulnerabilities while reporting others.
+
+```yml
+name: Container Security
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  container-scan:
+    name: Build and Scan Container
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t book-api:${{ github.sha }} \
+            .
+
+      - name: Scan container image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: book-api:${{ github.sha }}
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: 1
+```
+
+The main reason for the `ignore-unfixed:true` is the the pipeline won't fail over vulnerabilites for which no `fix` is currently available.
+
+After pushing configuration to remote repository, as expected the container security pipeline was triggered. The pipeline failed due to high vulnnerabilty findinds.
+
+![alt text](screenshots/trivy_scan_summary.png)
+
+To fix this issues, i first modifiwed the `Dockerfile` to upgrade os during build. and updated the `docker-compose.yml`
+
+I ran the scan again
+
+```bash
+.\trivy.exe image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 book-api-api:latest
+```
+
+and this time around the container was free of critical, high vulns.
+
+```text
+.\trivy.exe image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 book-api-api:latest
+2026-09-09T17:04:36-07:00       INFO    [vuln] Vulnerability scanning is enabled
+2026-09-09T17:04:36-07:00       INFO    [secret] Secret scanning is enabled
+2026-09-09T17:04:36-07:00       INFO    [secret] If your scanning is slow, please try '--scanners vuln' to disable secret scanning
+2026-09-09T17:04:36-07:00       INFO    [secret] Please see https://trivy.dev/docs/v0.74/guide/scanner/secret#recommendation for faster secret detection
+2026-09-09T17:04:40-07:00       INFO    Detected OS     family="debian" version="12.15"
+2026-09-09T17:04:40-07:00       INFO    [debian] Detecting vulnerabilities...   os_version="12" pkg_num=88
+2026-09-09T17:04:40-07:00       INFO    Number of language-specific files       num=1
+2026-09-09T17:04:40-07:00       INFO    [node-pkg] Detecting vulnerabilities...
+2026-09-09T17:04:41-07:00       WARN    Using severities from other vendors for some vulnerabilities. Read https://trivy.dev/docs/v0.74/guide/scanner/vulnerability#severity-selection for details.
+
+Report Summary
+
+┌───────────────────────────────────────────────────────────────────────┬──────────┬─────────────────┬─────────┐
+│                                Target                                 │   Type   │ Vulnerabilities │ Secrets │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ book-api-api:latest (debian 12.15)                                    │  debian  │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/accepts/package.json                                 │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/array-flatten/package.json                           │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/body-parser/node_modules/debug/package.json          │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/body-parser/node_modules/ms/package.json             │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/body-parser/package.json                             │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/bytes/package.json                                   │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/call-bind-apply-helpers/package.json                 │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/call-bound/package.json                              │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/content-disposition/package.json                     │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/content-type/package.json                            │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/cookie-signature/package.json                        │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/cookie/package.json                                  │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/depd/package.json                                    │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/destroy/package.json                                 │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/dotenv/package.json                                  │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/dunder-proto/package.json                            │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/ee-first/package.json                                │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/encodeurl/package.json                               │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/es-define-property/package.json                      │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/es-errors/package.json                               │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/es-object-atoms/package.json                         │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/escape-html/package.json                             │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/etag/package.json                                    │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/express/node_modules/debug/package.json              │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/express/node_modules/ms/package.json                 │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/express/node_modules/qs/package.json                 │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/express/package.json                                 │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/finalhandler/node_modules/debug/package.json         │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/finalhandler/node_modules/ms/package.json            │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/finalhandler/package.json                            │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/forwarded/package.json                               │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/fresh/package.json                                   │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/function-bind/package.json                           │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/get-intrinsic/package.json                           │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/get-proto/package.json                               │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/gopd/package.json                                    │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/has-symbols/package.json                             │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/hasown/package.json                                  │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/http-errors/package.json                             │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/iconv-lite/package.json                              │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/inherits/package.json                                │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/ipaddr.js/package.json                               │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/math-intrinsics/package.json                         │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/media-typer/package.json                             │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/merge-descriptors/package.json                       │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/methods/package.json                                 │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/mime-db/package.json                                 │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/mime-types/package.json                              │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/mime/package.json                                    │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/ms/package.json                                      │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/negotiator/package.json                              │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/object-inspect/package.json                          │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/on-finished/package.json                             │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/parseurl/package.json                                │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/path-to-regexp/package.json                          │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/pg-cloudflare/package.json                           │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/pg-connection-string/package.json                    │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/pg-int8/package.json                                 │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/pg-pool/package.json                                 │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/pg-protocol/package.json                             │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/pg-types/package.json                                │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/pg/package.json                                      │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/pgpass/package.json                                  │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/postgres-array/package.json                          │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/postgres-bytea/package.json                          │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/postgres-date/package.json                           │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/postgres-interval/package.json                       │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/proxy-addr/package.json                              │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/qs/package.json                                      │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/range-parser/package.json                            │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/raw-body/package.json                                │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/safe-buffer/package.json                             │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/safer-buffer/package.json                            │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/send/node_modules/debug/node_modules/ms/package.json │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/send/node_modules/debug/package.json                 │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/send/package.json                                    │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/serve-static/package.json                            │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/setprototypeof/package.json                          │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/side-channel-list/package.json                       │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/side-channel-map/package.json                        │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/side-channel-weakmap/package.json                    │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/side-channel/package.json                            │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/split2/package.json                                  │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/statuses/package.json                                │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/toidentifier/package.json                            │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/type-is/package.json                                 │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/unpipe/package.json                                  │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/utils-merge/package.json                             │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/vary/package.json                                    │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/node_modules/xtend/package.json                                   │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ app/package.json                                                      │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ opt/yarn-v1.22.22/package.json                                        │ node-pkg │        0        │    -    │
+├───────────────────────────────────────────────────────────────────────┼──────────┼─────────────────┼─────────┤
+│ usr/local/lib/node_modules/corepack/package.json                      │ node-pkg │        0        │    -    │
+└───────────────────────────────────────────────────────────────────────┴──────────┴─────────────────┴─────────┘
+Legend:
+- '-': Not scanned
+- '0': Clean (no security findings detected)
+```
