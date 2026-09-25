@@ -1,5 +1,10 @@
 pipeline{
-    agent any
+    agent{
+        docker{
+            image 'node:20-bookworm'
+            reuseNode true
+        }
+    }
 
     stages{
         stage("checkout"){
@@ -34,6 +39,20 @@ pipeline{
                 echo "Running test"
                 sh "npm run test"
             }
+        }
+    }
+
+    post{
+        succes{
+            echo "CI pipeline completed succefully."
+        }
+
+        failure{
+            echo "CI pipeline failed. Check the stage log."
+        }
+
+        always{
+            echo "CI pipeline execution completed."
         }
     }
 }
