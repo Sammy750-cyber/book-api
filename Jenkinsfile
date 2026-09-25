@@ -1,8 +1,8 @@
 pipeline{
     agent{
         docker{
-            image: 'node:20-bookworm'
-            reuseNode: true
+            image 'node:20-bookworm'
+            reuseNode true
         }
     }
 
