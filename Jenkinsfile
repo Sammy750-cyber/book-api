@@ -13,31 +13,17 @@ pipeline{
             }
         }
 
-        stage("install dependencies"){
+        stage("Node.js CI"){
             steps{
-                echo "Installing dependencies..."
-                sh "npm ci"
-            }
-        }
-
-        stage("run lint"){
-            steps{
-                echo "Running linter..."
-                sh "npm run lint"
-            }
-        }
-
-        stage("run typecheck"){
-            steps{
-                echo "Running typecheck"
-                sh "npm run typecheck"
-            }
-        }
-
-        stage("Run test"){
-            steps{
-                echo "Running test"
-                sh "npm run test"
+                sh '''docker run --rm "$WORKSPACE:/app" \
+            -w /app \
+            node:20-bookworm \
+            sh -c ' npm run ci &&
+            npm run lint &&
+            npm run typecheck &&
+            npm run test 
+            '
+            '''
             }
         }
     }
