@@ -43,7 +43,7 @@ pipeline{
     }
 
     post{
-        succes{
+        success{
             echo "CI pipeline completed succefully."
         }
 
