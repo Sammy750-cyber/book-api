@@ -137,4 +137,34 @@ The jenkins was running as a normal user, not privileged. So i modified the dock
 
 ![alt text](screenshots/jenkins_fial_2.png)
 
-Even after the resolving the Docker-access issues, the test failed again, this was ok because the docker was no longer the problem. 
+Even after the resolving the Docker-access issues, the test failed again, this was ok because the docker was no longer the problem.
+
+![alt text](screenshots/jenkins_error_3.png)
+
+![alt text](screenshots/jenkins_error_4.png)
+
+Progress made, now i was faced with another problem to solve, initial i had issues accessing docker which i resolved. Now jenkins itself can successfully access and use docker, but i my agent:
+
+```jenkinsfile
+agent { docker { image 'node:20-bookworm' } }
+```
+
+This means that i am using an agent docker, and inside it i am running an image `node:20-bookworm`. so now this image is trying to access docker inside it, which does not exist, ergo `'docker not found'` hence skipping other steps. It looks something like:
+
+```text
+Windows host
+    │
+    └── Docker Desktop
+          │
+          └── Jenkins container
+                │
+                ├── Jenkins
+                │
+                └── Docker socket
+                      │
+                      └── node:20-bookworm
+                            │
+                            └── MY PIPELINE SHELL
+                                  │
+                                  └── docker 'docker not found'
+```
