@@ -1,9 +1,9 @@
 pipeline{
-    agent{
-        docker{
-            image 'node:20-bookworm'
-            reuseNode true
-        }
+    agent any
+
+    environment {
+        CI_NETWORK = "book-api-ci-network"
+        POSTGRES_CONTAINER = "book-api-postgres"
     }
 
     stages{
@@ -16,7 +16,7 @@ pipeline{
         stage('Create Test Network') {
             steps {
                 sh '''
-                    docker network create ci-test-network || true
+                    docker network create ${CI_NETWORK} 2>/dev/null || true
                 '''
             }
         }
@@ -24,10 +24,12 @@ pipeline{
         stage('Start PostgreSQL') {
             steps {
                 sh '''
+                    docker rm -f ${POSTGRES_CONTAINER} 2>/dev/null || true
+
                     docker run -d \
-                      --name ci-postgres \
-                      --network ci-test-network \
-                      -e POSTGRES_DB=book_api \
+                      --name ${POSTGRES_CONTAINER} \
+                      --network ${CI_NETWORK} \
+                      -e POSTGRES_DB=book_api_test \
                       -e POSTGRES_USER=postgres \
                       -e POSTGRES_PASSWORD=postgres \
                       postgres:16
@@ -38,9 +40,11 @@ pipeline{
         stage('Wait for PostgreSQL') {
             steps {
                 sh '''
-                    until docker exec ci-postgres pg_isready \
-                        -U testuser \
-                        -d testdb; do
+                    echo "Waiting for PostgreSQL..."
+
+                    until docker exec ${CI_NETWORK} pg_isready \
+                        -U postgres \
+                        -d book_api_test; do
                         sleep 2
                     done
                 '''
@@ -48,6 +52,12 @@ pipeline{
         }
 
         stage("install dependencies"){
+            agent{
+                docker{
+                    image 'node:20-bookworm'
+                    reuseNode true
+                }
+            }
             steps{
                 echo "Installing dependencies..."
                 sh "npm ci"
@@ -55,6 +65,12 @@ pipeline{
         }
 
         stage("run lint"){
+            agent{
+                docker{
+                    image 'node:20-bookworm'
+                    reuseNode true
+                }
+            }
             steps{
                 echo "Running linter..."
                 sh "npm run lint"
@@ -62,6 +78,12 @@ pipeline{
         }
 
         stage("run typecheck"){
+            agent{
+                docker{
+                    image 'node:20-bookworm'
+                    reuseNode true
+                }
+            }
             steps{
                 echo "Running typecheck"
                 sh "npm run typecheck"
@@ -69,29 +91,30 @@ pipeline{
         }
 
         stage("Run test"){
+            agent{
+                docker{
+                    image 'node:20-bookworm'
+                    reuseNode true
+                }
+            }
+
+             environment {
+                DB_HOST = 'book-api-postgres'
+                DB_PORT = '5432'
+                DB_NAME_TEST = 'book_api_test'
+                DB_USER = 'postgres'
+                DB_PASSWORD = 'postgres'
+            }
             steps{
                 echo "Running test"
-                sh '''
-                    docker run --rm \
-                      --network ci-test-network \
-                      -e DB_HOST=ci-postgres \
-                      -e DB_PORT=5432 \
-                      -e DB_NAME=book_api \
-                      -e DB_USER=postgres \
-                      -e DB_PASSWORD=postgres \
-                      node:20-bookworm \
-                      sh -c "
-                        npm ci &&
-                        npm run test
-                      "
-                '''
+                sh "npm test"
             }
         }
     }
 
     post{
         success{
-            echo "CI pipeline completed succefully."
+            echo "CI pipeline completed successfully."
         }
 
         failure{
@@ -100,8 +123,8 @@ pipeline{
 
         always{
             sh '''
-                docker rm -f ci-postgres || true
-                docker network rm ci-test-network || true
+                docker rm -f ${POSTGRES_CONTAINER} 2>/dev/null || true
+                docker network rm ${CI_NETWORK} 2>/dev/null || true
             '''
         }
     }
