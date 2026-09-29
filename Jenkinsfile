@@ -13,17 +13,78 @@ pipeline{
             }
         }
 
-        stage("Node.js CI"){
+        stage('Create Test Network') {
+            steps {
+                sh '''
+                    docker network create ci-test-network || true
+                '''
+            }
+        }
+
+        stage('Start PostgreSQL') {
+            steps {
+                sh '''
+                    docker run -d \
+                      --name ci-postgres \
+                      --network ci-test-network \
+                      -e POSTGRES_DB=book_api \
+                      -e POSTGRES_USER=postgres \
+                      -e POSTGRES_PASSWORD=postgres \
+                      postgres:16
+                '''
+            }
+        }
+
+        stage('Wait for PostgreSQL') {
+            steps {
+                sh '''
+                    until docker exec ci-postgres pg_isready \
+                        -U testuser \
+                        -d testdb; do
+                        sleep 2
+                    done
+                '''
+            }
+        }
+
+        stage("install dependencies"){
             steps{
-                sh '''docker run --rm "$WORKSPACE:/app" \
-            -w /app \
-            node:20-bookworm \
-            sh -c ' npm run ci &&
-            npm run lint &&
-            npm run typecheck &&
-            npm run test 
-            '
-            '''
+                echo "Installing dependencies..."
+                sh "npm ci"
+            }
+        }
+
+        stage("run lint"){
+            steps{
+                echo "Running linter..."
+                sh "npm run lint"
+            }
+        }
+
+        stage("run typecheck"){
+            steps{
+                echo "Running typecheck"
+                sh "npm run typecheck"
+            }
+        }
+
+        stage("Run test"){
+            steps{
+                echo "Running test"
+                sh '''
+                    docker run --rm \
+                      --network ci-test-network \
+                      -e DB_HOST=ci-postgres \
+                      -e DB_PORT=5432 \
+                      -e DB_NAME=book_api \
+                      -e DB_USER=postgres \
+                      -e DB_PASSWORD=postgres \
+                      node:20-bookworm \
+                      sh -c "
+                        npm ci &&
+                        npm run test
+                      "
+                '''
             }
         }
     }
@@ -38,7 +99,10 @@ pipeline{
         }
 
         always{
-            echo "CI pipeline execution completed."
+            sh '''
+                docker rm -f ci-postgres || true
+                docker network rm ci-test-network || true
+            '''
         }
     }
 }
